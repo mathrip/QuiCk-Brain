@@ -5,7 +5,7 @@ Results of the KCL BMEIS Hackathon 2026
 
 ## Team Members
 - Mathilde Ripart (mathilde.ripart@kcl.ac.uk)
-- tbd
+- Heqing Rong (heqing.rong@kcl.ac.uk)
 - tbd
 - tbd
 - tbd
