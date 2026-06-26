@@ -88,7 +88,7 @@ def _already_processed(csv_path: Path) -> set:
 # Per-scan pipeline
 # ---------------------------------------------------------------------------
 
-def process_scan(img_path: Path, device: str, cfg: dict, ref_path: Path, mask_path: Path) -> tuple:
+def process_scan(img_path: Path, device: str, cfg: dict, ref_path: Path, mask_path: Path, model_artefact) -> tuple:
     """Run the full QC pipeline for one scan.
 
     Args:
@@ -118,13 +118,10 @@ def process_scan(img_path: Path, device: str, cfg: dict, ref_path: Path, mask_pa
         brain_mask = None
 
     art_cfg = cfg["check_artifacts"]
-    _log(f'Loading artifact model from {art_cfg["model_path"]} ...')
-    model = load_regression_model(art_cfg["model_path"], device=device)
-    _log('Model loaded.')
     art = detect_artifacts(
         image,
         brain_mask=brain_mask,
-        model=model,
+        model=model_artefact,
         device=device,
         class_thresholds={k: v for k, v in art_cfg["class_thresholds"].items() if v is not None} or None,
     )
@@ -220,6 +217,12 @@ def run(
     elif overwrite:
         _log('Overwrite mode: reprocessing all scans')
 
+    # load model for artefact
+    art_cfg = cfg["check_artifacts"]
+    _log(f'Loading artifact model from {art_cfg["model_path"]} ...')
+    model = load_regression_model(art_cfg["model_path"], device=device)
+    _log('Model loaded.')
+    
     n_done = n_skip = n_errors = 0
     t_start = time.time()
 
@@ -232,7 +235,7 @@ def run(
 
         t0 = time.time()
         try:
-            art, con, coreg, meta, fov= process_scan(img_path, device, cfg,ref_path=ref_path, mask_path=mask_path)
+            art, con, coreg, meta, fov= process_scan(img_path, device, cfg,ref_path=ref_path, mask_path=mask_path, model_artefact=model)
 
             record = build_qc_record(
                 image_path=img_path,
