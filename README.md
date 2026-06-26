@@ -1,3 +1,6 @@
+<img src="https://github.com/mathrip/ClinMRI-QC/blob/47fa80018a7e84220d33bd578d3c3f3572d37193/docs/quickbrain_logo.png" alt="quickbrain logo" width="100" align="left"/> 
+
+
 # ClinMRI-QC
 A light python package for automated quality check of clinical MRI scans
 
