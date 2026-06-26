@@ -1,4 +1,4 @@
-"""Build a flat CSV-ready record from any combination of ClinMRI-QC module outputs.
+"""Build a flat CSV-ready record from any combination of QuiCk-Brain module outputs.
 
 Usage
 -----
@@ -29,6 +29,7 @@ def build_qc_record(
     artifacts: dict = None,
     contrast: dict = None,
     coreg: dict = None,
+    fov: dict = None,
     meta: dict = None,
     timestamp: str = None,
 ) -> dict:
@@ -41,6 +42,7 @@ def build_qc_record(
     artifacts   : dict returned by detect_artifacts(), or None.
     contrast    : dict returned by detect_contrast_enhancement(), or None.
     coreg       : dict returned by registration_qc(), or None.
+    fov         : dict returned by check_fov(), or None.
     meta        : dict returned by metaqc.run_qc(), or None.
     timestamp   : ISO datetime string; defaults to now.
 
@@ -84,6 +86,14 @@ def build_qc_record(
         record['coreg_ssim_passed'] = passed.get('ssim', '')
         record['coreg_ncc_passed']  = passed.get('ncc', '')
 
+    if fov is not None:
+        record['fov_overall'] = fov.get('Overall', '')
+        def _join(v):
+            return '|'.join(v) if isinstance(v, list) else str(v)
+        record['fov_check1'] = _join(fov.get('Check 1 (scan edge proximity)', []))
+        record['fov_check2'] = _join(fov.get('Check 2 (margin proximity)', []))
+        record['fov_check3'] = _join(fov.get('Check 3 (distance check)', []))
+
     if meta is not None:
         record['metaqc_status']   = meta.get('status', '')
         reasons = meta.get('reasons', [])
@@ -95,5 +105,34 @@ def build_qc_record(
         record['metaqc_centroid_offset_mm']  = features.get('centroid_offset_mm', '')
         meta_qc = meta.get('metadata_qc', {})
         record['metaqc_metadata_status'] = meta_qc.get('status', '')
+
+        # Image geometry is already extracted by metaqc.extract_metadata() — reuse
+        # it rather than reloading the NIfTI.
+        hdr_meta = meta_qc.get('metadata', {})
+        shape  = hdr_meta.get('shape') or []
+        zooms  = hdr_meta.get('voxel_spacing') or []
+        record['img_dim_x']       = int(shape[0]) if len(shape) > 0 else ''
+        record['img_dim_y']       = int(shape[1]) if len(shape) > 1 else ''
+        record['img_dim_z']       = int(shape[2]) if len(shape) > 2 else ''
+        record['img_vox_x']       = zooms[0] if len(zooms) > 0 else ''
+        record['img_vox_y']       = zooms[1] if len(zooms) > 1 else ''
+        record['img_vox_z']       = zooms[2] if len(zooms) > 2 else ''
+        record['img_orientation'] = hdr_meta.get('orientation', '')
+    else:
+        # Fallback: header-only read (no voxel data loaded) when metaqc not run.
+        try:
+            import nibabel as nib
+            _img  = nib.load(str(image_path))
+            _dims = _img.header.get_data_shape()
+            _zooms = _img.header.get_zooms()
+            record['img_dim_x']       = int(_dims[0]) if len(_dims) > 0 else ''
+            record['img_dim_y']       = int(_dims[1]) if len(_dims) > 1 else ''
+            record['img_dim_z']       = int(_dims[2]) if len(_dims) > 2 else ''
+            record['img_vox_x']       = round(float(_zooms[0]), 4) if len(_zooms) > 0 else ''
+            record['img_vox_y']       = round(float(_zooms[1]), 4) if len(_zooms) > 1 else ''
+            record['img_vox_z']       = round(float(_zooms[2]), 4) if len(_zooms) > 2 else ''
+            record['img_orientation'] = ''.join(nib.aff2axcodes(_img.affine))
+        except Exception:
+            pass
 
     return record

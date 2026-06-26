@@ -1,4 +1,4 @@
-"""Shared CSV schema and display constants for ClinMRI-QC.
+"""Shared CSV schema and display constants for QuiCk-Brain.
 
 Imported by generate_csv, append_csv, and generate_report so the column
 definition lives in exactly one place.
@@ -8,6 +8,9 @@ definition lives in exactly one place.
 # Columns for modules not run are written as empty strings.
 ALL_COLUMNS = [
     'timestamp', 'scan_path', 'patient_id',
+    # NIfTI header metadata
+    'img_dim_x', 'img_dim_y', 'img_dim_z',
+    'img_vox_x', 'img_vox_y', 'img_vox_z', 'img_orientation',
     # detect_artifacts() — scaled [0,1] severity scores
     'artifacts_quality_passed', 'artifacts_detected',
     'prob_clean', 'prob_motion', 'prob_noise', 'prob_ghosting',
@@ -17,6 +20,8 @@ ALL_COLUMNS = [
     'contrast_enhanced', 'contrast_vessel_ratio', 'contrast_bright_voxel_fraction',
     # registration_qc()
     'coreg_flag', 'coreg_ssim', 'coreg_ncc', 'coreg_ssim_passed', 'coreg_ncc_passed',
+    # check_fov()
+    'fov_overall', 'fov_check1', 'fov_check2', 'fov_check3',
     # metaqc.run_qc() — metadata + image-feature QC
     'metaqc_status', 'metaqc_reasons',
     'metaqc_foreground_fraction', 'metaqc_intensity_mean',

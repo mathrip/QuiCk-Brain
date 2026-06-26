@@ -1,4 +1,4 @@
-"""HTML report generation for ClinMRI-QC.
+"""HTML report generation for QuiCk-Brain
 
 Two public functions:
 
@@ -358,6 +358,8 @@ h2 { font-size: 11px; font-weight: 700; text-transform: uppercase;
 .mod.con  { border-color: #0284c7; }
 .mod.reg  { border-color: #0f766e; }
 .mod.meta { border-color: #d97706; }
+.mod.img  { border-color: #6366f1; }
+.mod.fov  { border-color: #0891b2; }
 .mod-title { font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
              text-transform: uppercase; color: #475569; margin-bottom: 10px; }
 .prob-row  { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
@@ -573,26 +575,26 @@ def _contrast_section_html(row: dict) -> str:
     vr       = _val(row, 'contrast_vessel_ratio')
     bvf      = _val(row, 'contrast_bright_voxel_fraction')
     vcls     = 'fail' if enhanced else 'pass'
-    vtext    = '⚠ Contrast enhancement detected' if enhanced else '✓ No contrast enhancement'
+    vtext    = '⚠ T1 Gadolinium enhancement detected' if enhanced else '✓ No T1 Gadolinium enhancement'
 
     alert = ''
     if enhanced:
         alert = '''<div style="margin-top:12px;font-size:12px;color:#f87171;
                    background:#450a0a33;padding:10px 14px;border-radius:8px;line-height:1.6">
-          Gadolinium enhancement is present. Ensure downstream pipelines account for this,
-          or use a pre-contrast scan for structural analysis.
+          T1 Gadolinium contrast enhancement is present. Use a pre-contrast T1w scan
+          for structural analysis and parcellation. Downstream pipelines may be affected.
         </div>'''
 
     return f'''
     <div class="mod con">
-      <div class="mod-title">Contrast Enhancement</div>
+      <div class="mod-title">T1 Gadolinium Contrast Enhancement</div>
       <span class="verdict {vcls}">{vtext}</span>
       <div class="metric-grid" style="margin-top:14px">
         <div class="metric-box">
-          <div class="metric-val">{_safe_float(vr, ".3f")}</div>
+          <div class="metric-val">{_safe_float(vr, ".4f")}</div>
           <div class="metric-lbl">Vessel Intensity Ratio (P99.9 / P50)</div>
           <div style="font-size:11px;color:#475569;margin-top:6px">
-            Native T1w: 1.2–1.4 &nbsp;·&nbsp; Post-gadolinium: 1.6–2.0
+            Native T1w: 1.2–1.4 &nbsp;·&nbsp; Post-gadolinium T1w: 1.6–2.0
           </div>
         </div>
         <div class="metric-box">
@@ -759,13 +761,99 @@ def _metaqc_section_html(row: dict) -> str:
     </div>'''
 
 
+def _fov_section_html(row: dict) -> str:
+    overall = _val(row, 'fov_overall')
+    if overall == '':
+        return ''
+
+    passed  = overall.lower() == 'passed'
+    vcls    = 'pass' if passed else 'fail'
+    vtext   = '✓ Full FOV confirmed' if passed else '✗ FOV clipping detected'
+
+    def _check_html(label, raw, check_num):
+        if raw == '':
+            return ''
+        items = [r.strip() for r in raw.split('|') if r.strip()]
+        all_ok = all(i.lower() == 'passed' for i in items)
+        col    = '#4ade80' if all_ok else '#f87171'
+        detail = ', '.join(items) if not all_ok else 'Passed'
+        return f'''
+        <div class="metric-box">
+          <div class="metric-val" style="font-size:13px;color:{col}">{detail}</div>
+          <div class="metric-lbl">Check {check_num}: {label}</div>
+          <div class="{'metric-ok' if all_ok else 'metric-bad'}" style="margin-top:5px">
+            {'✓ Pass' if all_ok else '✗ Fail'}
+          </div>
+        </div>'''
+
+    c1 = _check_html('Scan edge proximity', _val(row, 'fov_check1'), 1)
+    c2 = _check_html('Margin proximity (5 mm)', _val(row, 'fov_check2'), 2)
+    c3 = _check_html('Distance transform', _val(row, 'fov_check3'), 3)
+
+    alert = ''
+    if not passed:
+        alert = '''<div style="margin-top:12px;font-size:12px;color:#f87171;
+                   background:#450a0a33;padding:10px 14px;border-radius:8px;line-height:1.6">
+          FOV clipping detected — part of the brain may be cut off. Review before
+          running parcellation or segmentation; re-acquisition may be required.
+        </div>'''
+
+    return f'''
+    <div class="mod fov">
+      <div class="mod-title">Field of View (FOV)</div>
+      <span class="verdict {vcls}">{vtext}</span>
+      <div class="metric-grid" style="margin-top:14px">{c1}{c2}{c3}</div>
+      {alert}
+    </div>'''
+
+
+def _image_info_html(row: dict) -> str:
+    dim_x = _val(row, 'img_dim_x')
+    if dim_x == '':
+        return ''
+    dim_y  = _val(row, 'img_dim_y', '?')
+    dim_z  = _val(row, 'img_dim_z', '?')
+    vox_x  = _val(row, 'img_vox_x', '?')
+    vox_y  = _val(row, 'img_vox_y', '?')
+    vox_z  = _val(row, 'img_vox_z', '?')
+    orient = _val(row, 'img_orientation', '—')
+
+    def _fv(v):
+        try: return f'{float(v):.3f}'
+        except: return str(v)
+
+    dims_str = f'{dim_x} × {dim_y} × {dim_z}'
+    vox_str  = f'{_fv(vox_x)} × {_fv(vox_y)} × {_fv(vox_z)} mm'
+
+    return f'''
+    <div class="mod img">
+      <div class="mod-title">Image Properties</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div class="metric-box">
+          <div class="metric-val" style="font-size:16px">{dims_str}</div>
+          <div class="metric-lbl">Dimensions (voxels)</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" style="font-size:16px">{vox_str}</div>
+          <div class="metric-lbl">Voxel Size</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-val" style="font-size:24px">{orient}</div>
+          <div class="metric-lbl">Orientation</div>
+        </div>
+      </div>
+    </div>'''
+
+
 def _patient_full_html(row: dict, collapsed: bool = True) -> str:
     pid      = row.get('patient_id', 'unknown')
     ts       = row.get('timestamp', '')
     has_art  = _val(row, 'artifacts_quality_passed') != ''
     has_con  = _val(row, 'contrast_enhanced') != ''
     has_reg  = _val(row, 'coreg_flag') != ''
+    has_fov  = _val(row, 'fov_overall') != ''
     has_meta = _val(row, 'metaqc_status') != ''
+    has_img  = _val(row, 'img_dim_x') != ''
     passed   = str(row.get('artifacts_quality_passed', '')).lower() in ('true', '1')
     detected = [d for d in (row.get('artifacts_detected') or '').split('|') if d]
 
@@ -784,16 +872,20 @@ def _patient_full_html(row: dict, collapsed: bool = True) -> str:
 
     mod_html = ''.join(
         f'<span class="badge {"badge-on" if active else "badge-off"}">{lbl}</span>'
-        for lbl, active in [('Artifact detection', has_art),
-                             ('Contrast enhancement', has_con),
+        for lbl, active in [('Image info', has_img),
+                             ('Artifact detection', has_art),
+                             ('T1 Gad contrast', has_con),
+                             ('FOV check', has_fov),
                              ('Registration QC', has_reg),
                              ('Metadata QC', has_meta)]
     )
 
     body = f'''
     <div style="margin-bottom:16px">{mod_html}</div>
+    {_image_info_html(row)}
     {_artifacts_section_html(row)}
     {_contrast_section_html(row)}
+    {_fov_section_html(row)}
     {_coreg_section_html(row)}
     {_metaqc_section_html(row)}
     <div style="font-size:11px;color:#334155;margin-top:12px">
@@ -946,16 +1038,20 @@ def generate_html_from_csv(csv_path: str, output_path: str = None) -> str:
     now     = datetime.now().strftime('%Y-%m-%d %H:%M')
     single  = n_total == 1
 
-    has_artifacts = any(_val(r, 'artifacts_quality_passed') != '' for r in rows)
-    has_contrast  = any(_val(r, 'contrast_enhanced') != '' for r in rows)
-    has_coreg     = any(_val(r, 'coreg_flag') != '' for r in rows)
-    has_meta      = any(_val(r, 'metaqc_status') != '' for r in rows)
+    has_artifacts  = any(_val(r, 'artifacts_quality_passed') != '' for r in rows)
+    has_contrast   = any(_val(r, 'contrast_enhanced') != '' for r in rows)
+    has_coreg      = any(_val(r, 'coreg_flag') != '' for r in rows)
+    has_fov        = any(_val(r, 'fov_overall') != '' for r in rows)
+    has_meta       = any(_val(r, 'metaqc_status') != '' for r in rows)
+    has_image_info = any(_val(r, 'img_dim_x') != '' for r in rows)
 
     mod_badges = ''.join(
         f'<span class="badge {"badge-on" if active else "badge-off"}"'
         f' style="margin-right:6px">{lbl}</span>'
-        for lbl, active in [('Artifact detection', has_artifacts),
-                             ('Contrast enhancement', has_contrast),
+        for lbl, active in [('Image info', has_image_info),
+                             ('Artifact detection', has_artifacts),
+                             ('T1 Gad contrast', has_contrast),
+                             ('FOV check', has_fov),
                              ('Registration QC', has_coreg),
                              ('Metadata QC', has_meta)]
     )
@@ -1008,14 +1104,20 @@ def generate_html_from_csv(csv_path: str, output_path: str = None) -> str:
     summary_table_html = ''
     if not single:
         cols = [('patient_id', 'Patient'), ('timestamp', 'Timestamp')]
+        if has_image_info:
+            cols += [('img_dims',        'Dimensions'),
+                     ('img_voxel_size',  'Voxel Size'),
+                     ('img_orientation', 'Orient.')]
         if has_artifacts:
             cols += [('artifacts_quality_passed', 'Status'),
                      ('artifacts_detected',       'Artifacts detected'),
                      ('iqm_motion_blur_score',    'EFC'),
                      ('iqm_snr',                  'SNR')]
         if has_contrast:
-            cols += [('contrast_enhanced',    'Contrast'),
+            cols += [('contrast_enhanced',    'T1 Gad'),
                      ('contrast_vessel_ratio', 'Vessel ratio')]
+        if has_fov:
+            cols += [('fov_overall', 'FOV')]
         if has_coreg:
             cols += [('coreg_flag', 'Reg. flag'),
                      ('coreg_ssim', 'SSIM'),
@@ -1034,6 +1136,22 @@ def generate_html_from_csv(csv_path: str, output_path: str = None) -> str:
                 if col == 'artifacts_quality_passed':
                     c = '#4ade80' if passed else '#f87171'
                     v = f'<strong style="color:{c}">{"PASS" if passed else "FAIL"}</strong>'
+                elif col == 'img_dims':
+                    dx = row.get('img_dim_x', '')
+                    dy = row.get('img_dim_y', '')
+                    dz = row.get('img_dim_z', '')
+                    v  = f'{dx}×{dy}×{dz}' if dx else '—'
+                elif col == 'img_voxel_size':
+                    vx = row.get('img_vox_x', '')
+                    vy = row.get('img_vox_y', '')
+                    vz = row.get('img_vox_z', '')
+                    def _fv(s):
+                        try: return f'{float(s):.3f}'
+                        except: return str(s)
+                    v = f'{_fv(vx)}×{_fv(vy)}×{_fv(vz)} mm' if vx else '—'
+                elif col == 'fov_overall':
+                    c = '#4ade80' if str(v).lower() == 'passed' else '#f87171'
+                    v = f'<span style="color:{c};font-weight:600">{v}</span>'
                 elif col == 'coreg_flag':
                     c = _FLAG_COLOURS.get(v, '#94a3b8')
                     v = f'<span style="color:{c};font-weight:600">{v}</span>'
@@ -1045,6 +1163,8 @@ def generate_html_from_csv(csv_path: str, output_path: str = None) -> str:
                     v = f'<span style="color:{c};font-weight:600">{str(v).upper()}</span>'
                 elif col == 'metaqc_foreground_fraction':
                     v = _safe_float(v, '.3f') if v else '—'
+                elif col == 'contrast_vessel_ratio':
+                    v = _safe_float(v, '.4f') if v else '—'
                 elif col == 'patient_id':
                     v = f'<a href="#pt-{v}" style="color:#7c3aed;text-decoration:none">{v}</a>'
                 cells += f'<td>{v}</td>'
