@@ -99,6 +99,9 @@ def process_scan(img_path: Path, device: str, cfg: dict, ref_path: Path, mask_pa
     Returns:
         (artifacts_result, contrast_result, metaqc_result)
     """
+
+    _log(f'Start processing scan: {img_path}')
+
     image, image_nib = load_nifti(str(img_path))
 
     # Skull-strip via brainchop. get_brain_mask uses _save_inverse_conform so
@@ -140,23 +143,20 @@ def process_scan(img_path: Path, device: str, cfg: dict, ref_path: Path, mask_pa
     coreg = None
     if ref_path is not None:
         _log(f'Check for coregistration with reference image')
-        ref_arr = load_nifti(ref_path)
-        ref_mask = get_brain_mask(ref_path) 
-        min_shape = tuple(min(r,g) for r,g in zip(ref_arr.shape, image.shape))
-        slices = tuple(slice(0,s) for s in min_shape)
-        mask_crop = ref_mask[slices]
-        ref_brain = ref_arr.copy()
-        reg_brain = image.copy()
-        ref_brain[~mask_crop] = 0.0
-        reg_brain[~mask_crop] = 0.0
- 
-        coreg = registration_qc(
-            ref_arr  = ref_brain,
-            reg_arr  = reg_brain,
-            ref_path = ref_path,
-            reg_path = str(img_path),
-            verbose  = True,
-        )
+        ref_arr,_ = load_nifti(ref_path)
+        if ref_arr.shape != image.shape:
+            coreg = {'flag': "RED"}
+        else:
+            ref_brain = ref_arr.copy()
+            reg_brain = image.copy()
+            ref_brain[~brain_mask] = 0.0
+            reg_brain[~brain_mask] = 0.0
+    
+            coreg = registration_qc(
+                ref_arr  = ref_brain,
+                reg_arr  = reg_brain,
+                verbose  = False,
+            )
     
     # check fov
     _log(f'Check for cropped FOV')
@@ -248,6 +248,7 @@ def run(
                 artifacts=art,
                 contrast=con,
                 meta=meta,
+                coreg=coreg,
             )
             append_csv_record(record, str(csv_path))
 

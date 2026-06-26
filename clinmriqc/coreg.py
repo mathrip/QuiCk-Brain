@@ -95,8 +95,7 @@ def evaluate_flag(results: dict, thresholds: dict) -> str:
         return "YELLOW"
     return "RED"
 
-def print_report(ref_path: str, reg_path: str,
-                 results: dict, thresholds: dict, flag: str):
+def print_report(results: dict, thresholds: dict, flag: str):
     colour = ANSI[flag]
     reset  = ANSI["RESET"]
     bold   = ANSI["BOLD"]
@@ -108,8 +107,6 @@ def print_report(ref_path: str, reg_path: str,
     print(bold + "=" * width + reset)
     print(bold + "  Brain MRI Registration QC Report" + reset)
     print(bold + "=" * width + reset)
-    print(f"  Reference : {ref_path}")
-    print(f"  Registered: {reg_path}")
     print("-" * width)
     print(f"  {'Metric':<10}  {'Value':>8}  {'Threshold':>10}  {'Status'}")
     print("-" * width)
@@ -130,8 +127,6 @@ def print_report(ref_path: str, reg_path: str,
 def registration_qc(
     ref_arr: np.ndarray,
     reg_arr: np.ndarray,
-    ref_path: str = "",      
-    reg_path: str = "",
     ssim_threshold: float = THRESHOLDS["ssim"],
     ncc_threshold:  float = THRESHOLDS["ncc"],
     verbose: bool = True,
@@ -141,12 +136,8 @@ def registration_qc(
     if verbose:
         print(f"> Reference shape : {ref_arr.shape}")
         print(f"> Registered shape: {reg_arr.shape}")
-        print("> Pre-processing (shape alignment + normalisation) …")
 
     ref_arr, reg_arr = preprocess(ref_arr, reg_arr)
-
-    if verbose:
-        print("> Computing metrics …")
 
     ssim_val = compute_ssim(ref_arr, reg_arr)
     ncc_val  = compute_ncc(ref_arr, reg_arr)
@@ -156,7 +147,7 @@ def registration_qc(
     passed  = {k: v >= thresholds[k] for k, v in results.items()}
 
     if verbose:
-        print_report(ref_path, reg_path, results, thresholds, flag)
+        print_report(results, thresholds, flag)
 
     return {**results, "flag": flag, "passed": passed}
 
@@ -193,9 +184,7 @@ def main():
     reg_arr, _= load_nifti(args.registered)
 
     # get brain mask 
-    print("> Generating brain mask from reference image …")
     brain_mask = get_brain_mask(args.reference)  
-
     min_shape = tuple(min(r, g) for r, g in zip(ref_arr.shape, reg_arr.shape))
     slices    = tuple(slice(0, s) for s in min_shape)
     mask_crop = brain_mask[slices]
@@ -212,8 +201,6 @@ def main():
     result = registration_qc(
         ref_arr        = ref_brain,
         reg_arr        = reg_brain,
-        ref_path       = args.reference,
-        reg_path       = args.registered,
         ssim_threshold = args.ssim_threshold,
         ncc_threshold  = args.ncc_threshold,
         verbose        = not args.quiet,
